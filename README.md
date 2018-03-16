@@ -1,3 +1,3 @@
-# quad-ddpg
+# cartpole-ddpg
 
-Continuous control for quadrotors using deep deterministic policy gradients (DDPG). Work in progress (limited success)
+ddpg for cartpole. Work in progress (limited success)

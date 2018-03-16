@@ -1,17 +1,21 @@
 import numpy as np
 
-a = np.array([1, 2 ,3])
-a.shape = (3,1)
-print(a)
-Q = np.matrix('1 0 0; 0 1 0; 0 0 1')
-print(Q)
-x = np.transpose(a)
-print(x.shape, Q.shape, a.shape)
-y = np.dot(np.dot(x, Q), a)
-y.shape = (1,)
-print(y.shape)
-print(y)
+import gym
+env = gym.make('Pendulum-v0')
 
-
-Q = np.diag([1, 2, 3])
-print(Q)
+'''
+oservation: [cart_pos, cart_vel, pole_angle, pole_vel]
+actions   : {left: 0, right: 1}
+reward	  : fixed=1. should compute our own rewards
+start     : random position withing +- 0.05
+terminal  : angle > 12, pos > 2.4, episode length > 200
+'''
+env.reset()
+for _ in range(1000):
+    env.render()
+    print(env.action_space)
+    observation, reward, done, info = env.step([1]) # take a random action
+    print(observation)
+    print(reward)
+    if done:
+    	break

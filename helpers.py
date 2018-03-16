@@ -11,8 +11,6 @@ from keras.optimizers import Adam
 import keras.backend as K
 K.set_learning_phase(1)
 
-from scipy.integrate import ode
-import models# , trajectories
 import logging
 logging.basicConfig(filename='debugging.log',level=logging.DEBUG)
 
@@ -28,21 +26,7 @@ def bound_actions(actions):
         elif actions[0][i] < 0:
             actions[0][i] = 0
     return actions
-def compute_desired_u(quad_model, actions):
-    # actions are commands to each rotor, commands are between 0 and 1
-    # scale them to 1100 to 8600 rpm, then convert motor speeds to torques
-    omegas = np.zeros((1, 4))
-    # bound the noisy actions:
-    bounded_actions = bound_actions(actions)
-    for i in range(4):
-        omegas[0][i] = 1100 + 7000*bounded_actions[0][i]
-    # compute torques and moments from 
-    # print(omegas)
-    u1 = quad_model.ct * (omegas[0][0]**2 + omegas[0][1]**2 +omegas[0][2]**2 +omegas[0][3]**2)
-    u2 = quad_model.ct * quad_model.l*(omegas[0][3]**2 - omegas[0][1]**2)
-    u3 = quad_model.ct * quad_model.l*(omegas[0][2]**2 - omegas[0][0]**2)
-    u4 = quad_model.cq * (omegas[0][0] - omegas[0][1] + omegas[0][2] - omegas[0][3])
-    return [u1, u2, u3, u4]
+
 
 def compute_rewards(state, actions, Q, R, c):
     '''
@@ -59,7 +43,7 @@ def compute_rewards(state, actions, Q, R, c):
     # print(reward)
     return reward/1000
 
-def create_critic(in_shape, n_actions=4):
+def create_critic(in_shape, n_actions=1):
     initializer = initializers.TruncatedNormal(mean=0.0, stddev=0.01)
 
     critic_state = Sequential()
@@ -90,7 +74,7 @@ def create_critic(in_shape, n_actions=4):
     # critic.summary()
     return critic, critic_action.input, critic_state.input
 
-def create_actor(in_shape, n_actions=4):
+def create_actor(in_shape, n_actions=1):
     # custom_objects=None
     '''
     actor = Sequential()
@@ -167,110 +151,6 @@ def make_trainable(model, trainable):
     for l in model.layers:
         l.trainable = trainable
         '''
-
-class quad_env():
-    def __init__(self, init_r=(0.0,0.0,0.0,0.0,0.0,0.0), dt=0.01, tol=(0.05,0.05,0.05,0.04), r_des=(0.0,0.0,0.0,0.0), t1=10):
-        # 
-        #self.post = q
-
-        # time settings
-        self.t0 = 0             # initial time
-        self.t1 = t1            # final time
-        self.dt = dt            # time step for integration
-        self.STATE_LENGTH = 16
-        self.r_des = r_des
-        self.tol = tol
-        # dynamical model (from baldr forked repo)
-        self.model = models.NonLinear3()
-
-        # initial values
-        x0     = init_r[0];   dx0     = 0.0
-        y0     = init_r[1];   dy0     = 0.0
-        z0     = init_r[2];   dz0     = 0.0
-        phi0   = init_r[3];   dphi0   = 0.0
-        theta0 = init_r[4];   dtheta0 = 0.0
-        psi0   = init_r[5];   dpsi0   = 0.0
-        self.init_state = np.array([    x0,     dx0, 
-                        y0,     dy0, 
-                        z0,     dz0,
-                        phi0,       dphi0,
-                        theta0,     dtheta0,
-                        phi0,       dphi0       ])
-
-
-        self.integrator = ode(self.model.integration_loop)
-        # https://itp.tugraz.at/~ert//blog/2014/06/02/equivalent-ode-integrators-in-matlab-and-scipy/
-        # https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.integrate.ode.html
-        # set integrator equivalent to ode45 of matlab
-        self.integrator.set_integrator('dopri5')
-        self.integrator.set_initial_value(self.init_state, self.t0)
-
-        # logging data in a dictionary:
-        self.data = dict(   x=[],       y=[],       z=[], 
-                    xr=[],      yr=[],      zr=[],      psir=[],
-                    phi=[],     theta=[],   psi=[],     t=[],
-                    u1=[],      u2=[],      u3=[],      u4=[],
-                    u1r=[],     u2r=[],     u3r=[],     u4r=[],
-                    omega1=[],  omega2=[],  omega3=[],  omega4=[]   )   
-
-
-    def set_integrator(self):
-        self.integrator = ode(self.model.integration_loop)
-        # https://itp.tugraz.at/~ert//blog/2014/06/02/equivalent-ode-integrators-in-matlab-and-scipy/
-        # https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.integrate.ode.html
-        # set integrator equivalent to ode45 of matlab
-        self.integrator.set_integrator('dopri5')
-        self.integrator.set_initial_value(self.init_state, self.t0)
-
-    def step(self, u):
-        self.model.update(u)
-        self.integrator.integrate(self.integrator.t + self.dt)
-        # omega = self.model.get_omega()
-        # return new state:
-        state = self.get_state()
-        return state
-
-
-    def get_state(self):
-        ''' state vector: X
-        x, y, z, xdot, ydot, zdot, phi, theta, psi, phidot, thetadot, psidot, (x-x_m), (y-y_m), (z-z_m), (psi-psi_m)
-        0, 1, 2,   3 ,  4 ,   5 ,   6 ,   7 ,   8 ,   9  ,     10   ,   11  ,    12  ,    13   ,   14  ,      15 
-        where _m denotes a command signal.
-        '''
-        state = np.zeros((1, self.STATE_LENGTH))
-        state[0][0]  = self.integrator.y[0]
-        state[0][1]  = self.integrator.y[2]
-        state[0][2]  = self.integrator.y[4]
-        state[0][3]  = self.integrator.y[1]
-        state[0][4]  = self.integrator.y[3]
-        state[0][5]  = self.integrator.y[5]
-        state[0][6]  = self.integrator.y[6]#%(2*np.pi)
-        state[0][7]  = self.integrator.y[8]#%(2*np.pi)
-        state[0][8]  = self.integrator.y[10]#%(2*np.pi)
-        state[0][9]  = self.integrator.y[7]
-        state[0][10] = self.integrator.y[9]
-        state[0][11] = self.integrator.y[11]
-        state[0][12] = self.integrator.y[0] - self.r_des[0]
-        state[0][13] = self.integrator.y[2] - self.r_des[1]
-        state[0][14] = self.integrator.y[4] - self.r_des[2]
-        state[0][15] = self.integrator.y[10] - self.r_des[3]
-
-        return state
-
-    def check_end(self, state):
-        # check if the quad left the allowed area of navigation (a cube centered at 0,0,0, with width=16)
-        for i in range(3):
-            if abs(state[0][i]) > 8:
-                print("state " + str(i) +" failed first")
-                print(state[0][0:3])
-                return True, -1000
-        if self.integrator.t >= self.t1:
-            return True, -500
-
-        for i in range(4):
-            if abs(state[0][12+i]) > self.tol[i]:
-                return False, 0
-        return True, 100
 
 
 

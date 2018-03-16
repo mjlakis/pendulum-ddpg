@@ -3,8 +3,7 @@ ship trainer using DDPG
 ship actions are:
 state: [x, y, z, xdot, ydot, zdot, phi, theta, psi, phidot, thetadot, psidot]
 """
-from scipy.integrate import ode
-import models# , trajectories, controllers
+import gym
 
 # keras stuff here:
 import pickle
@@ -51,9 +50,9 @@ REPLAY_START_SIZE      = 100
 SAVE_SIZE              = 20
 
 # Fixed game parameters:
-STATE_LENGTH    = 16
+STATE_LENGTH    = 4
 in_shape        = [STATE_LENGTH]
-N_ACTIONS       = 4
+N_ACTIONS       = 1
 
 # initialize networks
 # actor and its target
@@ -106,24 +105,9 @@ reward_batch      = np.zeros((MINIBATCH_SIZE, 1))
 is_end_batch      = np.zeros((MINIBATCH_SIZE, 1))
 y_batch           = np.zeros((MINIBATCH_SIZE, 1))
 
-# cost matrices:
-#            x     y     z                 theta    t_dot      x-x_m
-# taken from my previous adaptive control porject, probably should tune again
-#Q = 10*np.diag([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1 ,1 ,1])
-Q = np.diag([0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 1, 1, 1, 1, 1, 1, 2, 2 ,2 ,2])
-R = 0.01*np.diag([1,1,1,1])
-# cost related to time
-c = 0.1 
 
 
-def rand_pos():
-    x     = np.random.uniform(-5,5,1)
-    y     = np.random.uniform(-5,5,1)
-    z     = np.random.uniform(-5,5,1)
-    phi   = np.random.uniform(-np.pi/10,np.pi/10,1)
-    theta = np.random.uniform(-np.pi/10,np.pi/10,1)
-    psi   = np.random.uniform(-np.pi/10,np.pi/10,1)
-    return (x,y,z,phi,theta,psi)
+
 
 def noise_decay(ep_count):
     decay = ep_count/50
@@ -131,7 +115,8 @@ def noise_decay(ep_count):
         decay = 1
     scale = 1.05 - decay
     return scale
-env = []
+env = env = gym.make('Pendulum-v0')
+#env.reset()
 #O-H noise process:
 
 
@@ -147,14 +132,10 @@ while ep < NUM_EPISODES:
     #logging.info("New episode: " + str(ep))
     episode_rewards = 0
     loss = 0
-    # restart environment with new initial position and orientation
-    # x, y, z, phi, theta psi
-    rand_r_init = (0,0,-1,0,0,0) # rand_pos()
-    #sign = -1*(np.random.randn(1) > 0) +1*(np.random.randn(1) <= 0)
 
-    noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(4), sigma=0.2*np.ones(4), x0=0.3)
+    noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(1), sigma=0.2*np.ones(1), x0=0.3)
     #logging.info("Initial position: " + str(rand_r_init))
-    env = quad_env(init_r=rand_r_init) 
+    env.reset()
     state = env.get_state()
     #logging.info("Initial state: " + str(state))
     step_count = 0
@@ -172,15 +153,10 @@ while ep < NUM_EPISODES:
         for i in range(N_ACTIONS):
             #OU_noise[0][i] = noise_decay(ep)*noise()[i]#OU.function(actions[0][i], 0, 1, 0.1)# noise_decay(ep)*truncnorm.rvs(-0.4, 0.4, size=1)
             actions[0][i] += OU_noise[i]
-        #print(OU_noise)
-        #logging.info(OU_noise)
-        #logging.info(actions)
 
-        u = compute_desired_u(env.model, actions)
-        # print(state)
-        # print(u)
-        #logging.info("Action for new state: " + str(u))
-        new_state = env.step(u)
+
+
+        new_state, reward, done, info = env.step(u)
         #logging.info("New state: " + str(new_state))
         is_end, end_reward = env.check_end(new_state)
         reward  = compute_rewards(new_state, np.array(u), Q, R, c) + end_reward

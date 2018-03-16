@@ -152,6 +152,8 @@ with open("critic_target.json", "w") as outfile:
 critic_target.save_weights("critic_target.h5", overwrite=True)
 
 
+
+'''
 from helpers import OrnsteinUhlenbeckActionNoise
 
 noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(4), x0=0.4)
@@ -159,4 +161,13 @@ noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(4), x0=0.4)
 for i in range(300):
     delta = 0.4
     print(truncnorm.rvs(-delta, delta, size=1))
+
+'''
+
+import gym
+env = gym.make('CartPole-v0')
+env.reset()
+for _ in range(1000):
+    env.render()
+    env.step(env.action_space.sample()) # take a random action
 
