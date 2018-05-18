@@ -41,16 +41,17 @@ from keras import backend as K
 K.set_session(sess)
 
 
-MINIBATCH_SIZE         = 64 
+MINIBATCH_SIZE         = 256 
 N_REPLAY_MEMORY_LENGTH = 100000
-NUM_EPISODES           = 2000
+NUM_EPISODES           = 200
 DISCOUNT_FACTOR        = 0.99
 LEARNING_RATE          = 0.00025 # CURRENTLY USING ADAM OPTIMIZER
 REPLAY_START_SIZE      = 100
 SAVE_SIZE              = 20
+render                 = 0
 
 # Fixed game parameters:
-STATE_LENGTH    = 4
+STATE_LENGTH    = 3
 in_shape        = [STATE_LENGTH]
 N_ACTIONS       = 1
 
@@ -97,6 +98,7 @@ thrust for each motor
 '''
 
 # initialize some variables:
+##############################################
 state             = np.zeros((1, STATE_LENGTH))
 state_batch       = np.zeros((MINIBATCH_SIZE, STATE_LENGTH))
 next_state_batch  = np.zeros((MINIBATCH_SIZE, STATE_LENGTH))
@@ -108,12 +110,23 @@ y_batch           = np.zeros((MINIBATCH_SIZE, 1))
 
 
 
+# Noise function
+###############################################
+
+def UONoise():
+    theta = 0.15
+    sigma = 0.2
+    state = 0
+    while True:
+        yield state
+        state += -theta*state+sigma*np.random.randn()
+
 
 def noise_decay(ep_count):
-    decay = ep_count/50
+    decay = ep_count/150
     if decay > 1:
         decay = 1
-    scale = 1.05 - decay
+    scale = 1 - decay
     return scale
 env = env = gym.make('Pendulum-v0')
 #env.reset()
@@ -121,70 +134,72 @@ env = env = gym.make('Pendulum-v0')
 
 
 OU = OU()
- 
+OUn = UONoise()
+# Training:
+#################################
+#################################
 episode_rewards = 0
 ep = 0
 loss = 0
 is_end = False
 while ep < NUM_EPISODES:
-    #logging.info(".............................................")
+    # initialize new episode variables
     print("New episode: " + str(ep))
-    #logging.info("New episode: " + str(ep))
     episode_rewards = 0
     loss = 0
-
-    noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(1), sigma=0.2*np.ones(1), x0=0.3)
-    #logging.info("Initial position: " + str(rand_r_init))
-    env.reset()
-    state = env.get_state()
+    OUn = UONoise()
+    noise_scale = noise_decay(ep)
+    print("noise scale: ", noise_scale)
+    observation = env.reset()
+    print("observation: ", observation)
+    state = np.array(observation).reshape((1,3))
     #logging.info("Initial state: " + str(state))
     step_count = 0
     is_end = False
     end_reward = 0
     while not is_end:
-        #logging.info("Raw_actions, noise, noisy actions")
+
+        ## Render
+        if render == 1:
+            env.render()
+
+        ## Find actions and add noise then bound
         actions  = np.zeros((1, N_ACTIONS))
-        
-        OU_noise = np.zeros((1, N_ACTIONS))
-        OU_noise = noise()
-        actions  = actor.predict(state) #+ noise_decay(ep)*noise()
-        # print(actions)
-        #logging.info(actions)
+        actions  = 2*actor.predict(state) 
         for i in range(N_ACTIONS):
-            #OU_noise[0][i] = noise_decay(ep)*noise()[i]#OU.function(actions[0][i], 0, 1, 0.1)# noise_decay(ep)*truncnorm.rvs(-0.4, 0.4, size=1)
-            actions[0][i] += OU_noise[i]
+            #actions[0][i] += max(noise_scale, 0)*OU.function(actions[0][i], 0, 0.3, 0.3)
+            c = max(noise_scale, 0)
+            actions[0][i] = actions[0][i] + next(OUn)
+        actions = bound_actions(actions, N_ACTIONS)
 
 
-
-        new_state, reward, done, info = env.step(u)
-        #logging.info("New state: " + str(new_state))
-        is_end, end_reward = env.check_end(new_state)
-        reward  = compute_rewards(new_state, np.array(u), Q, R, c) + end_reward
-        #logging.info("Reward obtained: " + str(reward))
-        # logg rewards:
+        ## Find new state, reward, is_end, then compute episode rewards
+        new_observation, reward, is_end, info = env.step(actions[0])
+        new_state = np.array(new_observation).reshape((1,3))
         episode_rewards += (DISCOUNT_FACTOR**step_count) *reward
-        # append data to experience replay
-        D.append((state, actions, reward, new_state, is_end))
+
+        ## Append data to experience replay, update current state(to be used next iter)
+        D.append((state, actions/2, reward, new_state, is_end))
         state = np.copy(new_state)
 
+
+        ## Maintain the length of the buffer
         while len(D) > N_REPLAY_MEMORY_LENGTH:
                     D.popleft()
 
-        # experience replay
-        if len(D) > MINIBATCH_SIZE:
+        # Experience replay
+        if len(D) > 2000:#10*MINIBATCH_SIZE:
             minibatch = np.array(random.sample(D, MINIBATCH_SIZE))
             for i in range(MINIBATCH_SIZE):
                 state_batch[i]        = minibatch[i][0]
-                #print(is_end_batch[i])
                 action_batch[i]       = minibatch[i][1]
                 reward_batch[i]       = minibatch[i][2]
                 next_state_batch[i]   = minibatch[i][3]
                 is_end_batch[i]       = minibatch[i][4]
-                #print(is_end_batch.shape)
-        
-            #print(state_batch.shape)
+
             next_state_actions_batch        = actor_target.predict(next_state_batch, batch_size=MINIBATCH_SIZE)
             future_reward_predictions_batch = critic_target.predict([next_state_batch, next_state_actions_batch], batch_size=MINIBATCH_SIZE)
+
             '''
             Batch                                :    Dimensions
             state_batch                          :   (MINIBATCH_SIZE, STATE_LENGTH)
@@ -198,16 +213,13 @@ while ep < NUM_EPISODES:
                 # for the particular action taken, use the obtained reward to correct prediction function
                 if is_end_batch[i]:
                     y_batch[i] = reward_batch[i]
-                    # print(reward_batch[i])
                 else:
                     y_batch[i] = reward_batch[i] + DISCOUNT_FACTOR * future_reward_predictions_batch[i]
-                    # print(future_reward_predictions_batch[i])
-                    # print("...")
+
             
-            # training steps:
+            ## Training steps:
             loss += critic.train_on_batch([state_batch, action_batch], y_batch)
             a_for_grads = actor.predict(state_batch)      # this step is different from ben yoa's blog
-            #print(a_for_grads.shape)
             critic_action_gradients_batch = sess.run(critic_action_gradients, feed_dict={
                                                     critic_state_layer: state_batch,
                                                     critic_actions_layer: a_for_grads#action_batch
@@ -228,7 +240,6 @@ while ep < NUM_EPISODES:
 
     # print and log some data
     print("Episode ended")
-    print(env.integrator.t)
     print("loss: ", loss)
     print("total rewards: ", episode_rewards)
     print("end reward is: ", end_reward)

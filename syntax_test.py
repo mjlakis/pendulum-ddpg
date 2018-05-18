@@ -15,7 +15,6 @@ for _ in range(1000):
     env.render()
     print(env.action_space)
     observation, reward, done, info = env.step([1]) # take a random action
-    print(observation)
     print(reward)
     if done:
     	break

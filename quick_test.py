@@ -7,8 +7,7 @@ ship actions are:
     3. undock
 state: [x, y, z, xdot, ydot, zdot, phi, theta, psi, phidot, thetadot, psidot]
 """
-from scipy.integrate import ode
-import models#, trajectories, controllers
+
 
 # keras stuff here:
 import pickle
@@ -33,7 +32,6 @@ import keras.backend as K
 import time
 from helpers import *
 import copy
-from scipy.stats import truncnorm
 from collections import deque
 
 MINIBATCH_SIZE         = 32
@@ -46,10 +44,9 @@ SAVE_SIZE              = 50
 
 
 # Fixed game parameters:
-SHIP_RADIUS     = 0.5       # NOT USED
-STATE_LENGTH    = 16
+STATE_LENGTH    = 3
 in_shape        = [STATE_LENGTH]
-N_ACTIONS       = 4
+N_ACTIONS       = 1
 
 ''' state vector: X
 x, y, z, xdot, ydot, zdot, phi, theta, psi, phidot, thetadot, psidot, (x-x_m), (y-y_m), (z-z_m), (psi-psi_m)
@@ -116,7 +113,7 @@ y_batch           = np.zeros((MINIBATCH_SIZE, 1))
 sess.run(tf.global_variables_initializer())
 # actor._make_train_function()
 default_state     = np.zeros((1, STATE_LENGTH))
-actions = np.array([0, 0, 0, 0]).reshape((1,4))
+actions = np.array([0]).reshape((1,1))
 
 print(sess.run(critic_action_gradients, feed_dict={
         critic_state_layer: default_state,
@@ -165,9 +162,10 @@ for i in range(300):
 '''
 
 import gym
-env = gym.make('CartPole-v0')
+env = gym.make('Pendulum-v0')
 env.reset()
-for _ in range(1000):
+for _ in range(10):
     env.render()
     env.step(env.action_space.sample()) # take a random action
+    
 

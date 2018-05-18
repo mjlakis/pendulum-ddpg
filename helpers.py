@@ -19,12 +19,12 @@ logging.basicConfig(filename='debugging.log',level=logging.DEBUG)
 def state_from_model(model):
     # returns np array for state vector:
     return state
-def bound_actions(actions):
-    for i in range(4):
-        if actions[0][i] > 1:
-            actions[0][i] = 1
-        elif actions[0][i] < 0:
-            actions[0][i] = 0
+def bound_actions(actions, n_actions):
+    for i in range(n_actions):
+        if actions[0][i] > 2:
+            actions[0][i] = 2
+        elif actions[0][i] < -2:
+            actions[0][i] = -2
     return actions
 
 
@@ -44,22 +44,28 @@ def compute_rewards(state, actions, Q, R, c):
     return reward/1000
 
 def create_critic(in_shape, n_actions=1):
-    initializer = initializers.TruncatedNormal(mean=0.0, stddev=0.01)
+    #initializer = initializers.TruncatedNormal(mean=0.0, stddev=0.01)
+    weight_initializer = initializers.RandomUniform(minval=-0.003, maxval=0.003, seed=None)
+    bias_initializer   = initializers.RandomUniform(minval=-0.0003, maxval=0.0003, seed=None)
 
     critic_state = Sequential()
-    critic_state.add(BatchNormalization(input_shape=in_shape, axis=1))
-    critic_state.add(Dense(400, kernel_initializer=initializer, bias_initializer="zeros", name='L1'))
-    critic_state.add(BatchNormalization(axis=1, name='L2'))
-    critic_state.add(Activation("relu", name='3'))
-    critic_state.add(Dense(150, input_shape=in_shape, kernel_initializer=initializer, bias_initializer="zeros", name='L4'))
-    critic_state.add(BatchNormalization(axis=1, name='L5'))
+    #critic_state.add(BatchNormalization(input_shape=in_shape, axis=1))
+    
+    critic_state.add(Dense(32,input_shape = in_shape, kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='L1'))
+    #critic_state.add(BatchNormalization(axis=-1, name='L2'))
+    critic_state.add(Activation("elu", name='3'))
+
+    ''' Removing a layer
+    critic_state.add(Dense(64, input_shape=in_shape, kernel_initializer=initializer, bias_initializer="zeros", name='L4'))
+    #critic_state.add(BatchNormalization(axis=1, name='L5'))
     critic_state.add(Activation("relu", name='L6'))
+    '''
 
     critic_action = Sequential()
-    critic_action.add(BatchNormalization(input_shape=[n_actions], axis=1))
-    critic_action.add(Dense(150, kernel_initializer=initializer, bias_initializer="zeros", name='L7'))
-    critic_action.add(BatchNormalization(axis=1, name='L8'))
-    critic_action.add(Activation("relu", name='L9'))
+    #critic_action.add(BatchNormalization(input_shape=[n_actions], axis=1))
+    critic_action.add(Dense(32, input_shape = [n_actions], kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='L7'))
+    #critic_action.add(BatchNormalization(axis=-1, name='L8'))
+    critic_action.add(Activation("elu", name='L9'))
     
     # concatinate models:
     merged = Merge([critic_state, critic_action], mode='concat' , name='L10')
@@ -67,11 +73,13 @@ def create_critic(in_shape, n_actions=1):
     # critic = Sequential(Concatenate([critic_conv, critic_action]))
     critic_full = Sequential()
     critic_full.add(merged)
-    critic_full.add(Dense(1, activation="linear", kernel_initializer=initializer, bias_initializer="zeros", name='output'))
+    critic_full.add(Dense(128, activation="elu", kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='L11'))
+    #critic_full.add(BatchNormalization(axis=-1, name='L12'))
+    critic_full.add(Dense(1, activation="linear", kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='output'))
 
     critic = Model(input = [critic_state.input, critic_action.input], output= critic_full.output)
     critic.compile(loss='mse', optimizer=Adam(lr=0.001))
-    # critic.summary()
+    critic.summary()
     return critic, critic_action.input, critic_state.input
 
 def create_actor(in_shape, n_actions=1):
@@ -96,16 +104,19 @@ def create_actor(in_shape, n_actions=1):
     '''
     actor = Sequential()
     # actor.add(Input(shape=in_shape))
-    initializer = initializers.TruncatedNormal(mean=0.0, stddev=0.01)
-    actor.add(BatchNormalization(input_shape=in_shape, axis=1))
-    actor.add(Dense(400, kernel_initializer=initializer, bias_initializer="zeros", name='L1'))
-    actor.add(BatchNormalization(axis=1, name='L2'))
-    actor.add(Activation("relu", name='L3'))
-    actor.add(Dense(300, kernel_initializer=initializer, bias_initializer="zeros", name='L4'))
-    actor.add(BatchNormalization(axis=1, name='L5'))
-    actor.add(Activation("relu", name='L6'))
-    actor.add(Dense(n_actions, activation="sigmoid", kernel_initializer=initializer, bias_initializer="zeros", name='L10'))
-    # actor.summary()
+    #initializer = initializers.TruncatedNormal(mean=0.0, stddev=0.01)
+    weight_initializer = initializers.RandomUniform(minval=-0.003, maxval=0.003, seed=None)
+    bias_initializer   = initializers.RandomUniform(minval=-0.0003, maxval=0.0003, seed=None)
+
+    #actor.add(BatchNormalization(input_shape=in_shape, axis=1))
+    actor.add(Dense(32, input_shape = in_shape, kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='L1'))
+    #actor.add(BatchNormalization(axis=-1, name='L2'))
+    actor.add(Activation("elu", name='L3'))
+    actor.add(Dense(64, kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='L4'))
+    #actor.add(BatchNormalization(axis=-1, name='L5'))
+    actor.add(Activation("elu", name='L6'))
+    actor.add(Dense(n_actions, activation="tanh", kernel_initializer=weight_initializer, bias_initializer=bias_initializer, name='L10'))
+    actor.summary()
     return actor, actor.input, actor.trainable_weights
 
 def train_actor(sess, actor, actor_optimizer, actor_state_layer, action_gradient, state_batch, action_grads_batch):
@@ -123,7 +134,7 @@ def target_train(model, target_model, tau=0.001):
 
 
 class OrnsteinUhlenbeckActionNoise:
-    def __init__(self, mu=0, sigma=0.2, theta=1.0, dt=1e-2, x0=None):
+    def __init__(self, mu=0, sigma=0.2, theta=0.15, dt=1e-2, x0=None):
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
