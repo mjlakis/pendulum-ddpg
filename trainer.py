@@ -1,8 +1,3 @@
-"""
-ship trainer using DDPG
-ship actions are:
-state: [x, y, z, xdot, ydot, zdot, phi, theta, psi, phidot, thetadot, psidot]
-"""
 import gym
 
 # keras stuff here:
@@ -84,11 +79,7 @@ D = deque(pickle.load(pickle_in))
 len_d = len(D)
 
 
-''' state vector: X
-x, y, z, xdot, ydot, zdot, phi, theta, psi, phidot, thetadot, psidot, (x-x_m), (y-y_m), (z-z_m), (psi-psi_m)
-0, 1, 2,   3 ,  4 ,   5 ,   6 ,   7 ,   8 ,   9  ,     10   ,   11  ,    12  ,    13   ,   14  ,      15 
-where _m denotes a command signal.
-'''
+
 '''cost (reward) function:
 cost = integral(x'Qx + u'Ru + c)
 reward = -cost
